@@ -24,7 +24,8 @@ jiter==0.8.2
 jpype1==1.5.1
 jsonpatch==1.33
 jsonpointer==3.0.0
-kiwi==10.2.5
+kiwipiepy==0.20.3
+kiwipiepy_model==0.20.0
 konlpy==0.6.0
 langchain==0.3.12
 langchain-core==0.3.25
