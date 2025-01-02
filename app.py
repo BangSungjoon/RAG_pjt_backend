@@ -31,6 +31,9 @@ from pinecone import Pinecone, ServerlessSpec
 # 데이터 유효성 검사를 위한 Pydantic의 BaseModel
 from pydantic import BaseModel
 
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import HumanMessage, SystemMessage
+
 # .env 파일에서 환경 변수 로드
 load_dotenv()
 
@@ -49,6 +52,17 @@ index = pc.Index(index_name)
 
 # Pinecone에 사용할 벡터 인덱스 이름
 # index_name = "finance-pdt"
+
+# OpenAI를 사용하여 쿼리 텍스트 벡터화
+gpt_api_key = os.getenv("OPENAI_API_KEY")
+
+# LangChain의 OpenAI LLM 설정
+chat = ChatOpenAI(
+    model="gpt-4o",  # 또는 "gpt-4o"
+    openai_api_key=gpt_api_key,
+    temperature=0.7,
+    max_tokens=1000
+)
 
 # Pinecone 인덱스 생성
 # 인덱스가 존재하지 않으면 새 인덱스를 생성
@@ -115,8 +129,9 @@ async def chat_endpoint(req: ChatRequest):
     # 형태소 분석 및 명사 추출
     kiwi = Kiwi()
     # keywords = kiwi.tokenize(req.messages[-1].content)
-    tokens = kiwi.tokenize(req.messages[-1].content)
-    keywords = [token.form for token in tokens if token.tag.startswith("NN")]  # 명사 태그 추출
+    # tokens = kiwi.tokenize(req.messages[-1].content)
+    # keywords = [token.form for token in tokens if token.tag.startswith("NN")]  # 명사 태그 추출
+    keywords = [token.form for token in kiwi.tokenize(req.messages[-1].content) if token.tag in ['NNG', 'NNP']]  # 일반 명사와 고유 명사 추출
     print(keywords)
     # 기본 file_detail 값 생성
     file_detail_values = []
@@ -147,65 +162,80 @@ async def chat_endpoint(req: ChatRequest):
     results = index.query(
         vector=query_vector,     # 쿼리 벡터
         namespace=namespace,     # 검색할 namespace
-        top_k=10,                 # 검색 결과 개수
+        top_k=6,                 # 검색 결과 개수
         include_values=False,    # 벡터 값 포함 여부
         include_metadata=True,    # 메타데이터 포함 여부
         filter=metadata_filter  # 메타메이터 필터 on
     )
     print('성공')
+    for match in results["matches"]:
+        file_name = match["metadata"].get("file_name", "Unknown")  # file_name 추출, 없으면 "Unknown"
+        print(f"File Name: {file_name}")
     # 검색된 결과를 CONTEXT로 변환
     result_docs = "\n".join([match["metadata"].get("text", "") for match in results["matches"]])
     print('성공1')
     # 전체 대화 히스토리를 템플릿에 전달
-    conversation_history = "\n".join([f"{msg.role}: {msg.content}" for msg in req.messages])
+    # conversation_history = "\n".join([f"{msg.role}: {msg.content}" for msg in req.messages])
     print('성공2')
     # LLM 구성
-    llm = ChatUpstage()
+    # llm = ChatUpstage()
+    # 메시지 정의
+    system_message = SystemMessage(content=f"""
+    You are an assistant for question-answering tasks specialized in financial products. 
+    Use the following context to answer the question while considering the user's circumstances:
+    Context: {result_docs}
+    """)
+
+
+    # 사용자 질문
+    human_message = HumanMessage(content=req.messages[-1].content)
+
+    # LangChain LLM 호출
+    response = chat([system_message, human_message]).content
     print('llm 성공')
     # 프롬프트 정의
-    prompt_template = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """
-                You are an assistant for question-answering tasks specialized in financial products. Follow these rules carefully:
-                Rule 1. Use the following retrieved context to answer the question while considering the user's circumstances.
-                Rule 2. If the user's circumstances are clear, recommend one specific financial product that is most appropriate.
-                Rule 3. If the user's circumstances are unclear, ask clarifying questions to better understand their situation before recommending a product.
-                Rule 4. If no appropriate recommendation can be made, say: "질문을 이해하지 못하였습니다. 상세하게 질문해주세요."
-                Rule 5. Only include financial products or information directly relevant to the user's input. Do not provide unrelated product details or context.
-                Rule 6. Classify financial products into the following categories:
-                    - 예금 (Deposits): For users looking for fixed-term savings with interest.
-                    - 적금 (Savings Plans): For users wanting to save a fixed amount monthly for a specific term.
-                    - 입출금자유 (Free Savings Accounts): For users needing flexibility in deposits and withdrawals.
-                    - 담보대출 (Secured Loans): For users providing collateral to borrow money (e.g., housing).
-                    - 신용대출 (Unsecured Loans): For users borrowing based on creditworthiness without collateral.
-                    - 자동차대출 (Auto Loans): For users financing the purchase of a vehicle.
-                Rule 7. Ensure that every sentence ends with a space to improve readability.
-                ---
-                사용자와의 지난 대화: {history}
-                ---
-                CONTEXT:
-                {context}
-                """,
-            ),
-            ("user", "{input}"),
-        ]
-    )
-    print(prompt_template)
-    print('성공3')
-    # LLM Chain 정의
-    chain = prompt_template | llm | StrOutputParser()
-    print('성공4')
-    # LLM Chain 호출
-    try:
-        response = chain.invoke({"context": result_docs, "input": req.messages[-1].content, "history": conversation_history})
-        print('성공5', response)
-    except Exception as e:
-        print(f"Error during chain invocation: {e}")
+    # prompt_template = ChatPromptTemplate.from_messages(
+    #     [
+    #         (
+    #             "system",
+    #             """
+    #             You are an assistant for question-answering tasks specialized in financial products. Follow these rules carefully:
+    #             Rule 1. Use the following retrieved context to answer the question while considering the user's circumstances.
+    #             Rule 2. If the user's circumstances are clear, recommend one specific financial product that is most appropriate.
+    #             Rule 3. If the user's circumstances are unclear, ask clarifying questions to better understand their situation before recommending a product.
+    #             Rule 4. If no appropriate recommendation can be made, say: "질문을 이해하지 못하였습니다. 상세하게 질문해주세요."
+    #             Rule 5. Only include financial products or information directly relevant to the user's input. Do not provide unrelated product details or context.
+    #             Rule 6. Classify financial products into the following categories:
+    #                 - 예금 (Deposits): For users looking for fixed-term savings with interest.
+    #                 - 적금 (Savings Plans): For users wanting to save a fixed amount monthly for a specific term.
+    #                 - 입출금자유 (Free Savings Accounts): For users needing flexibility in deposits and withdrawals.
+    #                 - 담보대출 (Secured Loans): For users providing collateral to borrow money (e.g., housing).
+    #                 - 신용대출 (Unsecured Loans): For users borrowing based on creditworthiness without collateral.
+    #                 - 자동차대출 (Auto Loans): For users financing the purchase of a vehicle.
+    #             Rule 7. Ensure that every sentence ends with a space to improve readability.
+    #             ---
+    #             사용자와의 지난 대화: {history}
+    #             ---
+    #             CONTEXT:
+    #             {context}
+    #             """,
+    #         ),
+    #         ("user", "{input}"),
+    #     ]
+    # )
+    # print(prompt_template)
+    # print('성공3')
+    # # LLM Chain 정의
+    # chain = prompt_template | llm | StrOutputParser()
+    # print('성공4')
+    # # LLM Chain 호출
+    # try:
+    #     response = chain.invoke({"context": result_docs, "input": req.messages[-1].content, "history": conversation_history})
+    # except Exception as e:
+    #     print(f"Error during chain invocation: {e}")
 
-    # 결과 출력
-    print(f"LLM Response: {response}")
+    # # 결과 출력
+    # print(f"LLM Response: {response}")
 
     return {
         "reply": response,
