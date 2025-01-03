@@ -1,8 +1,13 @@
-## app.py
-### 주요 역할
+# RAG 기반 국민은행 AI 상담원
+## 서비스 소개
+- 국민은행 금융 상품(예금, 적금, 대출) 상품 설명서를 HTML로 변환 후 임베딩하여 vectorDB에 저장
+- vectorDB를 기반으로 사용자의 질문에 맞는 정보를 찾아주고 요약해주는 서비스 API
+- 사용자의 입력을 형태소 분석하여 알맞은 namespace의 정보를 가져오는 방식으로 정확도 향상 
+## 파일별 기능 설명
+### app.py
 1. Pinecone와 Upstage 모델 초기화
     - Pinecone을 활용해 텍스트 임베딩을 저장하고 검색합니다.
-    - Upstage 모델을 사용해 사용자의 입력 데이터를 벡터화하고, LLM(ChatUpstage)을 통해 답변을 생성합니다.
+    - Upstage 모델을 사용해 사용자의 입력 데이터를 벡터화하고, LLM(OpenAI GPT-4o)을 통해 답변을 생성합니다.
 2. FastAPI 구성
     - FastAPI로 RESTful API를 구축하며, CORS 정책을 설정해 외부 도메인에서의 요청을 허용합니다.
 3. 엔드포인트
