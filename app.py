@@ -1,6 +1,8 @@
 import os
 from typing import List, Optional
 
+import json
+
 # 라이브러리 임포트
 from kiwipiepy import Kiwi
 from langchain_core.prompts import ChatPromptTemplate
@@ -162,28 +164,78 @@ async def chat_endpoint(req: ChatRequest):
     results = index.query(
         vector=query_vector,     # 쿼리 벡터
         namespace=namespace,     # 검색할 namespace
-        top_k=6,                 # 검색 결과 개수
+        top_k=8,                 # 검색 결과 개수
         include_values=False,    # 벡터 값 포함 여부
         include_metadata=True,    # 메타데이터 포함 여부
         filter=metadata_filter  # 메타메이터 필터 on
     )
     print('성공')
+    # 데이터 가공 및 병합
+    grouped_data = {}
+    # for match in results["matches"]:
+    #     file_name = match["metadata"].get("file_name", "Unknown")  # file_name 추출, 없으면 "Unknown"
+    #     print(f"File Name: {file_name}")
+
     for match in results["matches"]:
-        file_name = match["metadata"].get("file_name", "Unknown")  # file_name 추출, 없으면 "Unknown"
+        file_name = match["metadata"].get("file_name", "")  # 파일 이름
+        file_detail = match["metadata"].get("file_detail", "")  # 파일 상세
+        file_text = match["metadata"].get("text", "")  # 파일 내용
+
+        # 같은 file_name 그룹화
+        if file_name not in grouped_data:
+            grouped_data[file_name] = {"file_detail": file_detail, "texts": []}
+        grouped_data[file_name]["texts"].append(file_text)
+
+    # 데이터 확인
+    for file_name, data in grouped_data.items():
         print(f"File Name: {file_name}")
+        print(f"Category: {data['file_detail']}")
+        print("Contents:")
+        for text in data["texts"]:
+            print(f"- {text[:100]}...")  # 첫 100자만 출력
+        print("\n")
+
     # 검색된 결과를 CONTEXT로 변환
     result_docs = "\n".join([match["metadata"].get("text", "") for match in results["matches"]])
     print('성공1')
     # 전체 대화 히스토리를 템플릿에 전달
-    # conversation_history = "\n".join([f"{msg.role}: {msg.content}" for msg in req.messages])
+    conversation_history = "\n".join([f"{msg.role}: {msg.content}" for msg in req.messages])
     print('성공2')
     # LLM 구성
     # llm = ChatUpstage()
+
     # 메시지 정의
+    # system_message = SystemMessage(content=f"""
+    # You are an assistant for question-answering tasks specialized in financial products. 
+    # Use the following context to answer the question while considering the user's circumstances:
+    # Context: {result_docs}
+    # """)
     system_message = SystemMessage(content=f"""
-    You are an assistant for question-answering tasks specialized in financial products. 
-    Use the following context to answer the question while considering the user's circumstances:
-    Context: {result_docs}
+    You are an assistant for question-answering tasks specialized in financial products.
+    You will be given JSON DATA and user conversation history.
+
+    Structure of JSON DATA will be
+
+    Product Name:
+    Category:
+    Description:
+
+    JSON DATA: {grouped_data}
+    user conversation history : {conversation_history}
+
+
+    You must follow the rules below.
+
+    1. Each file name represents the product name.
+    2. The category indicates the type of product.
+    3. Only use JSON DATA to find relevant product information.
+    4. Do not mix content between different products.
+    5. If the product cannot be identified, respond with: "죄송합니다. 해당 상품 정보를 찾을 수 없습니다."
+    6. If the input is unrelated to financial product consultations, respond with: "저는 KB 국민은행의 금융 상품과 정보만 제공해드릴 수 있습니다. 다시 입력해주세요."
+    7. If the input concerns financial institutions other than KB 국민은행, respond with: "저는 KB 국민은행의 금융 상품과 정보만 제공해드릴 수 있습니다. 다시 입력해주세요."
+    8. Answer naturally without including "Product Name", "Category", or "Description" in the response.
+    9. Base your responses only on the product information and user conversation history.
+
     """)
 
 
@@ -262,41 +314,6 @@ async def chat_endpoint(req: ChatRequest):
     #     "reply": result['result'],
     #     "sources": result['source_documents']
     # }
-
-# @app.post("/assistant")
-# async def assistant_endpoint(req: AssistantRequest):
-#     assistant = await openai.beta.assistants.retrieve("asst_tc4AhtsAjNJnRtpJmy1gjJOE")
-#
-#     if req.thread_id:
-#         # We have an existing thread, append user message
-#         await openai.beta.threads.messages.create(
-#             thread_id=req.thread_id, role="user", content=req.message
-#         )
-#         thread_id = req.thread_id
-#     else:
-#         # Create a new thread with user message
-#         thread = await openai.beta.threads.create(
-#             messages=[{"role": "user", "content": req.message}]
-#         )
-#         thread_id = thread.id
-#
-#     # Run and wait until complete
-#     await openai.beta.threads.runs.create_and_poll(
-#         thread_id=thread_id, assistant_id=assistant.id
-#     )
-#
-#     # Now retrieve messages for this thread
-#     # messages.list returns an async iterator, so let's gather them into a list
-#     all_messages = [
-#         m async for m in openai.beta.threads.messages.list(thread_id=thread_id)
-#     ]
-#     print(all_messages)
-#
-#     # The assistant's reply should be the last message with role=assistant
-#     assistant_reply = all_messages[0].content[0].text.value
-#
-#     return {"reply": assistant_reply, "thread_id": thread_id}
-
 
 # 건강 체크 엔드포인트
 @app.get("/health")
