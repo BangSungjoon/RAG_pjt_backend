@@ -130,9 +130,6 @@ async def chat_endpoint(req: ChatRequest):
 
     # 형태소 분석 및 명사 추출
     kiwi = Kiwi()
-    # keywords = kiwi.tokenize(req.messages[-1].content)
-    # tokens = kiwi.tokenize(req.messages[-1].content)
-    # keywords = [token.form for token in tokens if token.tag.startswith("NN")]  # 명사 태그 추출
     keywords = [token.form for token in kiwi.tokenize(req.messages[-1].content) if token.tag in ['NNG', 'NNP']]  # 일반 명사와 고유 명사 추출
     print(keywords)
     # 기본 file_detail 값 생성
@@ -172,9 +169,6 @@ async def chat_endpoint(req: ChatRequest):
     print('성공')
     # 데이터 가공 및 병합
     grouped_data = {}
-    # for match in results["matches"]:
-    #     file_name = match["metadata"].get("file_name", "Unknown")  # file_name 추출, 없으면 "Unknown"
-    #     print(f"File Name: {file_name}")
 
     for match in results["matches"]:
         file_name = match["metadata"].get("file_name", "")  # 파일 이름
@@ -197,19 +191,13 @@ async def chat_endpoint(req: ChatRequest):
 
     # 검색된 결과를 CONTEXT로 변환
     result_docs = "\n".join([match["metadata"].get("text", "") for match in results["matches"]])
-    print('성공1')
     # 전체 대화 히스토리를 템플릿에 전달
     conversation_history = "\n".join([f"{msg.role}: {msg.content}" for msg in req.messages])
-    print('성공2')
+
     # LLM 구성
     # llm = ChatUpstage()
 
     # 메시지 정의
-    # system_message = SystemMessage(content=f"""
-    # You are an assistant for question-answering tasks specialized in financial products. 
-    # Use the following context to answer the question while considering the user's circumstances:
-    # Context: {result_docs}
-    # """)
     system_message = SystemMessage(content=f"""
     You are an assistant for question-answering tasks specialized in financial products.
     You will be given JSON DATA and user conversation history.
@@ -244,76 +232,10 @@ async def chat_endpoint(req: ChatRequest):
 
     # LangChain LLM 호출
     response = chat([system_message, human_message]).content
-    print('llm 성공')
-    # 프롬프트 정의
-    # prompt_template = ChatPromptTemplate.from_messages(
-    #     [
-    #         (
-    #             "system",
-    #             """
-    #             You are an assistant for question-answering tasks specialized in financial products. Follow these rules carefully:
-    #             Rule 1. Use the following retrieved context to answer the question while considering the user's circumstances.
-    #             Rule 2. If the user's circumstances are clear, recommend one specific financial product that is most appropriate.
-    #             Rule 3. If the user's circumstances are unclear, ask clarifying questions to better understand their situation before recommending a product.
-    #             Rule 4. If no appropriate recommendation can be made, say: "질문을 이해하지 못하였습니다. 상세하게 질문해주세요."
-    #             Rule 5. Only include financial products or information directly relevant to the user's input. Do not provide unrelated product details or context.
-    #             Rule 6. Classify financial products into the following categories:
-    #                 - 예금 (Deposits): For users looking for fixed-term savings with interest.
-    #                 - 적금 (Savings Plans): For users wanting to save a fixed amount monthly for a specific term.
-    #                 - 입출금자유 (Free Savings Accounts): For users needing flexibility in deposits and withdrawals.
-    #                 - 담보대출 (Secured Loans): For users providing collateral to borrow money (e.g., housing).
-    #                 - 신용대출 (Unsecured Loans): For users borrowing based on creditworthiness without collateral.
-    #                 - 자동차대출 (Auto Loans): For users financing the purchase of a vehicle.
-    #             Rule 7. Ensure that every sentence ends with a space to improve readability.
-    #             ---
-    #             사용자와의 지난 대화: {history}
-    #             ---
-    #             CONTEXT:
-    #             {context}
-    #             """,
-    #         ),
-    #         ("user", "{input}"),
-    #     ]
-    # )
-    # print(prompt_template)
-    # print('성공3')
-    # # LLM Chain 정의
-    # chain = prompt_template | llm | StrOutputParser()
-    # print('성공4')
-    # # LLM Chain 호출
-    # try:
-    #     response = chain.invoke({"context": result_docs, "input": req.messages[-1].content, "history": conversation_history})
-    # except Exception as e:
-    #     print(f"Error during chain invocation: {e}")
-
-    # # 결과 출력
-    # print(f"LLM Response: {response}")
 
     return {
         "reply": response,
     }
-    # prompt_template = f"""
-    # 너는 전문 금융 컨설턴트 역할을 맡고 있다.
-    # 다음은 사용자와의 대화 기록이다:
-    # {conversation_history}
-    
-    # 사용자의 최신 질문에 대해 연결된 데이터베이스에서 가장 관련성 높은 정보를 찾아 답하라.
-    # 질문: "{req.messages[-1].content}"
-    # """
-    
-    # QA 실행
-    # qa = RetrievalQA.from_chain_type(
-    #     llm=chat_upstage,
-    #     chain_type="stuff",
-    #     retriever=pinecone_retriever,
-    #     return_source_documents=True
-    # )
-    
-    # result = qa(prompt_template)
-    # return {
-    #     "reply": result['result'],
-    #     "sources": result['source_documents']
-    # }
 
 # 건강 체크 엔드포인트
 @app.get("/health")
